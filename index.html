@@ -110,10 +110,65 @@
       // Paramétrage : `api` et `slug` sont lus une seule fois, au chargement, et affichés
       // pour que quiconque rejoue cette page sache contre quelle cible elle vient de tourner.
       const searchParams = new URLSearchParams(window.location.search);
-      const apiOrigin = searchParams.get("api") || "https://booking-api-psi-lilac.vercel.app";
-      const slug = searchParams.get("slug") || "salao-demo";
 
-      document.getElementById("config").textContent = `Cible : api=${apiOrigin}  slug=${slug}`;
+      // ---------------------------------------------------------------------
+      // Validation des paramètres (CR-01, 07-REVIEW.md).
+      //
+      // Cette page est publiée à une URL publique et fixe, destinée à être
+      // partagée. Sans validation, `?api=https://evil.example` ferait charger et
+      // exécuter un script arbitraire (geste 1 pose un <script src>) dans
+      // l'origine romanbtt.github.io — origine partagée avec toute autre GitHub
+      // Pages du même compte. Injection de script réfléchie classique.
+      //
+      // Les deux paramètres restent utiles pour rejouer cette page contre une
+      // preview ou un futur domaine propre : ils sont restreints, pas supprimés.
+      // Une valeur refusée est signalée à l'écran plutôt que silencieusement
+      // ignorée — une preuve qui ment sur sa propre cible ne prouve rien.
+      // ---------------------------------------------------------------------
+      const DEFAULT_API_ORIGIN = "https://booking-api-psi-lilac.vercel.app";
+      const ALLOWED_API_HOST_SUFFIXES = [".vercel.app"];
+      const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+      function resolveApiOrigin(raw) {
+        if (!raw) return { origin: DEFAULT_API_ORIGIN, rejected: null };
+        let url;
+        try {
+          url = new URL(raw);
+        } catch {
+          return { origin: DEFAULT_API_ORIGIN, rejected: raw };
+        }
+        const hostAllowed = ALLOWED_API_HOST_SUFFIXES.some((suffix) =>
+          url.hostname.endsWith(suffix),
+        );
+        if (url.protocol !== "https:" || !hostAllowed) {
+          return { origin: DEFAULT_API_ORIGIN, rejected: raw };
+        }
+        // `url.origin` seul : tout chemin, requête ou fragment fourni est écarté.
+        return { origin: url.origin, rejected: null };
+      }
+
+      function resolveSlug(raw) {
+        if (!raw) return { slug: "salao-demo", rejected: null };
+        if (!SLUG_PATTERN.test(raw)) return { slug: "salao-demo", rejected: raw };
+        return { slug: raw, rejected: null };
+      }
+
+      const { origin: apiOrigin, rejected: rejectedApi } = resolveApiOrigin(
+        searchParams.get("api"),
+      );
+      const { slug, rejected: rejectedSlug } = resolveSlug(searchParams.get("slug"));
+
+      const rejections = [];
+      if (rejectedApi !== null)
+        rejections.push(`api refusé (hôte non autorisé ou schéma non https) : ${rejectedApi}`);
+      if (rejectedSlug !== null)
+        rejections.push(
+          `slug refusé (format attendu : minuscules, chiffres, tirets) : ${rejectedSlug}`,
+        );
+
+      document.getElementById("config").textContent =
+        `Cible : api=${apiOrigin}  slug=${slug}` +
+        (rejections.length ? `  —  ${rejections.join("  |  ")}, valeur par défaut utilisée` : "");
 
       function setZone(id, html, ok) {
         const el = document.getElementById(id);
