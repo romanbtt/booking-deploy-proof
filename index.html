@@ -12,7 +12,7 @@
   contournement de Deployment Protection ne doit jamais y être écrit. La production est
   publique par construction (D-09), donc aucun contournement n'est nécessaire ici.
 
-  Paramétrage : `?api=<origine>` (défaut https://booking-api.vercel.app) et
+  Paramétrage : `?api=<origine>` (défaut https://booking-api-psi-lilac.vercel.app) et
   `?slug=<slug>` (défaut salao-demo) — rejouable contre une preview ou un futur domaine
   propre sans réécrire ce fichier, et dérivable telle quelle par la Phase 12.
 -->
@@ -110,7 +110,7 @@
       // Paramétrage : `api` et `slug` sont lus une seule fois, au chargement, et affichés
       // pour que quiconque rejoue cette page sache contre quelle cible elle vient de tourner.
       const searchParams = new URLSearchParams(window.location.search);
-      const apiOrigin = searchParams.get("api") || "https://booking-api.vercel.app";
+      const apiOrigin = searchParams.get("api") || "https://booking-api-psi-lilac.vercel.app";
       const slug = searchParams.get("slug") || "salao-demo";
 
       document.getElementById("config").textContent = `Cible : api=${apiOrigin}  slug=${slug}`;
