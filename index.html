@@ -84,6 +84,32 @@
       <div id="geste-3">En attente…</div>
     </section>
 
+    <section>
+      <h2>Geste 4 — chargement du widget embarquable en cross-origin (D-28, BUILD-05)</h2>
+      <p>
+        Extrait d'intégration exact, tel qu'un salon le collerait sur son site — le
+        <code>defer</code> est posé dès ce premier exemple, jamais ajouté après coup (Pitfall 17) :
+        un intégrateur copie l'exemple qu'on lui donne, et corriger la documentation plus tard ne
+        récupère pas les balises déjà collées.
+      </p>
+      <pre>
+&lt;script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"&gt;&lt;/script&gt;
+&lt;booking-widget&gt;&lt;/booking-widget&gt;</pre>
+      <p>
+        Ce qu'il faut observer ci-dessous : un encadré visible, rendu par un shadow root Lit, chargé
+        depuis <code>booking-api-psi-lilac.vercel.app</code> — un domaine distinct de celui qui sert
+        cette page (<code>*.github.io</code>), donc en cross-origin réel. L'URL est volontairement
+        laissée en dur (pas dérivée d'<code>apiOrigin</code>/<code>?api=</code>) : ce bloc doit
+        rester l'exemple copiable exact, jamais une variante paramétrée qu'un intégrateur ne
+        pourrait pas coller telle quelle.
+      </p>
+      <div id="geste-4">
+        <!-- prettier-ignore -->
+        <script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"></script>
+        <booking-widget></booking-widget>
+      </div>
+    </section>
+
     <footer>
       <h2>Ce que cette page ne prouve pas</h2>
       <ul>
