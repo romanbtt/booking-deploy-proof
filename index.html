@@ -96,5 +96,367 @@
       </p>
       <pre>
 &lt;script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"&gt;&lt;/script&gt;
-&lt;booking-widget salon="salao-demo"&gt;&lt;/booking-widget&gt;</pre>
+&lt;booking-widget&gt;&lt;/booking-widget&gt;</pre>
       <p>
+        Ce qu'il faut observer ci-dessous : un encadré visible, rendu par un shadow root Lit, chargé
+        depuis <code>booking-api-psi-lilac.vercel.app</code> — un domaine distinct de celui qui sert
+        cette page (<code>*.github.io</code>), donc en cross-origin réel. L'URL est volontairement
+        laissée en dur (pas dérivée d'<code>apiOrigin</code>/<code>?api=</code>) : ce bloc doit
+        rester l'exemple copiable exact, jamais une variante paramétrée qu'un intégrateur ne
+        pourrait pas coller telle quelle.
+      </p>
+      <div id="geste-4">
+        <!-- prettier-ignore -->
+        <script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"></script>
+        <booking-widget></booking-widget>
+      </div>
+    </section>
+
+    <footer>
+      <h2>Ce que cette page ne prouve pas</h2>
+      <ul>
+        <li>
+          Le détail du préflight <code>OPTIONS</code> lui-même : il est géré en interne par le
+          navigateur et invisible à JavaScript — ni le geste 1, ni le geste 3 ne peuvent l'observer.
+          Seul DevTools ou un <code>curl -X OPTIONS</code> manuel montre son détail exact.
+        </li>
+        <li>
+          Tout en-tête de réponse d'API non listé par
+          <code>Access-Control-Expose-Headers</code> — cet en-tête n'est jamais émis par
+          <code>server/http/publicResponse.ts</code>, donc cette page ne peut lire que le statut
+          HTTP et le corps JSON des réponses de l'API, jamais un en-tête personnalisé au-delà de la
+          petite liste CORS-safelisted.
+        </li>
+        <li>
+          La latence depuis le Brésil — mesurée séparément par une sonde tierce distribuée (type
+          Globalping), pas par cette page (D-15).
+        </li>
+      </ul>
+    </footer>
+
+    <script>
+      // Paramétrage : `api` et `slug` sont lus une seule fois, au chargement, et affichés
+      // pour que quiconque rejoue cette page sache contre quelle cible elle vient de tourner.
+      const searchParams = new URLSearchParams(window.location.search);
+
+      // ---------------------------------------------------------------------
+      // Validation des paramètres (CR-01, 07-REVIEW.md ; durci par CR-01, 08-REVIEW.md).
+      //
+      // Cette page est publiée à une URL publique et fixe, destinée à être
+      // partagée. Sans validation, `?api=https://evil.example` ferait charger et
+      // exécuter un script arbitraire (geste 1 pose un <script src>) dans
+      // l'origine romanbtt.github.io — origine partagée avec toute autre GitHub
+      // Pages du même compte. Injection de script réfléchie classique.
+      //
+      // Le premier correctif (07-REVIEW.md) filtrait sur le SUFFIXE d'hôte
+      // `.vercel.app`. C'était une formalité, pas une mitigation : `vercel.app`
+      // est un espace de noms ouvert à l'inscription publique et gratuite, donc
+      // n'importe qui obtient en quelques minutes un hôte qui satisfait
+      // `hostname.endsWith(".vercel.app")` et récupère l'exécution de script
+      // dans l'origine `*.github.io`. La restriction portait sur la CLASSE
+      // d'hôtes, jamais sur l'hôte.
+      //
+      // La liste blanche porte donc désormais sur des ORIGINES COMPLÈTES,
+      // comparées par égalité stricte (`Set.has(url.origin)`). Ajouter une
+      // origine de preview ici est un geste explicite et traçable dans git ;
+      // c'est voulu — une preview non listée bascule sur l'origine par défaut
+      // et le refus est affiché.
+      //
+      // Les deux paramètres restent utiles pour rejouer cette page contre une
+      // preview ou un futur domaine propre : ils sont restreints, pas supprimés.
+      // Une valeur refusée est signalée à l'écran plutôt que silencieusement
+      // ignorée — une preuve qui ment sur sa propre cible ne prouve rien.
+      // ---------------------------------------------------------------------
+      const DEFAULT_API_ORIGIN = "https://booking-api-psi-lilac.vercel.app";
+      // Origines complètes, jamais un suffixe. Toute entrée ajoutée ici obtient
+      // l'exécution de script dans l'origine de cette page : n'y mettre qu'une
+      // origine dont ce dépôt a le contrôle.
+      const ALLOWED_API_ORIGINS = new Set([DEFAULT_API_ORIGIN]);
+      const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+      function resolveApiOrigin(raw) {
+        if (!raw) return { origin: DEFAULT_API_ORIGIN, rejected: null };
+        let url;
+        try {
+          url = new URL(raw);
+        } catch {
+          return { origin: DEFAULT_API_ORIGIN, rejected: raw };
+        }
+        // Égalité stricte sur l'origine complète (schéma + hôte + port). `url.origin`
+        // est normalisé par le parseur d'URL du navigateur, donc insensible à la
+        // casse de l'hôte et aux ports par défaut ; un schéma non https ne peut pas
+        // figurer dans la liste, le contrôle de protocole est donc implicite.
+        if (!ALLOWED_API_ORIGINS.has(url.origin)) {
+          return { origin: DEFAULT_API_ORIGIN, rejected: raw };
+        }
+        // On renvoie l'entrée de la liste blanche, jamais une URL reconstruite à
+        // partir de l'entrée utilisateur : tout chemin, requête ou fragment fourni
+        // est écarté par construction.
+        return { origin: url.origin, rejected: null };
+      }
+
+      function resolveSlug(raw) {
+        if (!raw) return { slug: "salao-demo", rejected: null };
+        if (!SLUG_PATTERN.test(raw)) return { slug: "salao-demo", rejected: raw };
+        return { slug: raw, rejected: null };
+      }
+
+      const { origin: apiOrigin, rejected: rejectedApi } = resolveApiOrigin(
+        searchParams.get("api"),
+      );
+      const { slug, rejected: rejectedSlug } = resolveSlug(searchParams.get("slug"));
+
+      const rejections = [];
+      if (rejectedApi !== null)
+        rejections.push(
+          `api refusé (origine absente de la liste blanche d'origines complètes) : ${rejectedApi}`,
+        );
+      if (rejectedSlug !== null)
+        rejections.push(
+          `slug refusé (format attendu : minuscules, chiffres, tirets) : ${rejectedSlug}`,
+        );
+
+      document.getElementById("config").textContent =
+        `Cible : api=${apiOrigin}  slug=${slug}` +
+        (rejections.length ? `  —  ${rejections.join("  |  ")}, valeur par défaut utilisée` : "");
+
+      function setZone(id, html, ok) {
+        const el = document.getElementById(id);
+        el.innerHTML = html;
+        el.className = ok === undefined ? "" : ok ? "ok" : "fail";
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      // ---------------------------------------------------------------------
+      // Geste 1 — <script src> cross-origin vers {api}/deploy-probe.js.
+      //
+      // Un chargement par balise <script> n'est JAMAIS une requête CORS : aucune
+      // vérification d'origine n'intervient côté navigateur pour l'exécution du
+      // script lui-même. `onload` prouve seulement que le fichier a été récupéré
+      // et exécuté sans erreur de syntaxe — rien de plus : ni le statut HTTP, ni
+      // aucun en-tête n'est observable par ce seul chargement. C'est dit
+      // explicitement ci-dessous plutôt que masqué.
+      //
+      // Pour lire l'en-tête témoin x-deploy-probe, un fetch séparé est nécessaire :
+      // c'est ce fetch, et lui seul, qui expose les en-têtes de réponse.
+      // ---------------------------------------------------------------------
+      function runGeste1() {
+        const scriptTag = document.createElement("script");
+        scriptTag.src = `${apiOrigin}/deploy-probe.js`;
+
+        scriptTag.onload = async () => {
+          const probeGlobalPresent = typeof window.__deployProbe !== "undefined";
+          let headerLine = "en cours de lecture…";
+          setZone(
+            "geste-1",
+            `<p>script chargé et exécuté (onload) — ce seul signal ne prouve ni un statut HTTP ` +
+              `ni un en-tête. Propriété globale posée par la sonde : ` +
+              `<strong>${probeGlobalPresent ? "présente" : "ABSENTE"}</strong>.</p>` +
+              `<p>Lecture de l'en-tête témoin x-deploy-probe (fetch séparé, cache: "no-store") : ` +
+              `${headerLine}</p>` +
+              `<p><em>Rappel : un chargement par balise script n'est jamais une requête CORS et ` +
+              `n'expose aucun en-tête — cette information vient d'un fetch distinct, pas du ` +
+              `chargement ci-dessus.</em></p>`,
+            probeGlobalPresent,
+          );
+
+          try {
+            const bust = Date.now();
+            const probeResponse = await fetch(`${apiOrigin}/deploy-probe.js?bust=${bust}`, {
+              cache: "no-store",
+            });
+            const headerValue = probeResponse.headers.get("x-deploy-probe");
+            const expected = "public-headers-applied";
+            const ok = probeGlobalPresent && headerValue === expected;
+            setZone(
+              "geste-1",
+              `<p>script chargé et exécuté (onload) — ce seul signal ne prouve ni un statut HTTP ` +
+                `ni un en-tête. Propriété globale posée par la sonde : ` +
+                `<strong>${probeGlobalPresent ? "présente" : "ABSENTE"}</strong>.</p>` +
+                `<p>Lecture de l'en-tête témoin x-deploy-probe (fetch séparé, cache: "no-store") : ` +
+                `<code>${escapeHtml(headerValue ?? "(absent)")}</code> — attendu ` +
+                `<code>${expected}</code>.</p>` +
+                `<p><em>Rappel : un chargement par balise script n'est jamais une requête CORS et ` +
+                `n'expose aucun en-tête — cette information vient d'un fetch distinct, pas du ` +
+                `chargement ci-dessus.</em></p>`,
+              ok,
+            );
+          } catch (error) {
+            setZone(
+              "geste-1",
+              `<p>script chargé (onload), mais le fetch séparé destiné à lire x-deploy-probe a ` +
+                `échoué : <code>${escapeHtml(String(error))}</code></p>`,
+              false,
+            );
+          }
+        };
+
+        scriptTag.onerror = () => {
+          setZone(
+            "geste-1",
+            `<p class="fail">échec du chargement de <code>${escapeHtml(apiOrigin)}/deploy-probe.js</code> ` +
+              `(onerror) — aucune information de statut ou d'en-tête n'est disponible sur cet ` +
+              `événement, par construction de la balise &lt;script&gt;.</p>`,
+            false,
+          );
+        };
+
+        document.head.appendChild(scriptTag);
+      }
+
+      // ---------------------------------------------------------------------
+      // Geste 2 — GET {api}/api/public/{slug}
+      //
+      // Trois cas distincts, jamais confondus :
+      //  - 200 + data.slug  -> succès
+      //  - 404 + error.code === "not_found" -> l'API répond bien en JSON, mais le
+      //    tenant n'est pas semé ou n'est pas actif (D-118 rend ces deux cas
+      //    indistinguables, c'est un choix délibéré du contrat, pas un bug de
+      //    cette page)
+      //  - 401 ou réponse text/html -> Deployment Protection probablement encore
+      //    active (l'API publique ne peut structurellement pas émettre de 401
+      //    applicatif). Le corps brut d'une telle réponse n'est JAMAIS affiché :
+      //    seulement le statut, le content-type, et la présence/absence des clés
+      //    data / error / vercel_auth_enabled.
+      // ---------------------------------------------------------------------
+      async function runGeste2() {
+        try {
+          const response = await fetch(`${apiOrigin}/api/public/${slug}`, {
+            cache: "no-store",
+          });
+          const contentType = response.headers.get("content-type") || "";
+          const isJson = contentType.includes("application/json");
+          const body = isJson ? await response.json().catch(() => undefined) : undefined;
+
+          if (response.status === 401 || (!isJson && contentType.includes("text/html"))) {
+            setZone(
+              "geste-2",
+              `<p class="fail">Deployment Protection probablement encore active — statut ` +
+                `<code>${response.status}</code>, content-type <code>${escapeHtml(contentType)}</code>. ` +
+                `Clés présentes dans le corps : data=${body && "data" in body}, ` +
+                `error=${body && "error" in body}, ` +
+                `vercel_auth_enabled=${body && "vercel_auth_enabled" in body}. ` +
+                `Le corps brut n'est jamais affiché ici.</p>`,
+              false,
+            );
+            return;
+          }
+
+          if (response.status === 200 && body && body.data && body.data.slug === slug) {
+            setZone(
+              "geste-2",
+              `<p>statut <code>200</code>, <code>data.slug</code> présent et égal à ` +
+                `<code>${escapeHtml(slug)}</code>.</p><pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`,
+              true,
+            );
+            return;
+          }
+
+          if (response.status === 404 && body && body.error && body.error.code === "not_found") {
+            setZone(
+              "geste-2",
+              `<p>statut <code>404</code>, <code>error.code === "not_found"</code> — le ` +
+                `déploiement répond bien en JSON, mais le tenant "${escapeHtml(slug)}" n'est pas ` +
+                `encore semé ou n'est pas actif (D-118 rend ces deux cas indistinguables).</p>` +
+                `<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`,
+              false,
+            );
+            return;
+          }
+
+          setZone(
+            "geste-2",
+            `<p class="fail">réponse inattendue — statut <code>${response.status}</code>, ` +
+              `content-type <code>${escapeHtml(contentType)}</code>.</p>` +
+              (body ? `<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>` : ""),
+            false,
+          );
+        } catch (error) {
+          setZone(
+            "geste-2",
+            `<p class="fail">fetch a rejeté : <code>${escapeHtml(String(error))}</code></p>`,
+            false,
+          );
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Geste 3 — POST {api}/api/public/{slug}/bookings, corps DÉLIBÉRÉMENT
+      // invalide (objet JSON vide).
+      //
+      // Pourquoi un corps vide : `createGuestBooking` appelle
+      // `publicBookingCreateSchema.safeParse` comme PREMIÈRE instruction et lève
+      // avant toute écriture (voir server/domain — validation avant persistance).
+      // Un corps vide produit donc un 400 validation_error prévisible, sans
+      // jamais créer de ligne partielle ni de réservation fantôme.
+      //
+      // L'en-tête idempotency-key n'est pas CORS-safelisted : sa seule présence
+      // transforme ce POST en requête nécessitant un préflight OPTIONS (Pitfall 11)
+      // — préflight que cette page ne peut jamais observer directement (voir le
+      // bloc "Ce que cette page ne prouve pas" en bas de page). Si le préflight
+      // échoue, fetch() rejette avec un TypeError opaque, sans raison exploitable
+      // exposée à JS par la spécification Fetch.
+      // ---------------------------------------------------------------------
+      async function runGeste3() {
+        const idempotencyKey = crypto.randomUUID();
+        try {
+          const response = await fetch(`${apiOrigin}/api/public/${slug}/bookings`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "idempotency-key": idempotencyKey,
+            },
+            body: JSON.stringify({}),
+          });
+          const contentType = response.headers.get("content-type") || "";
+          const isJson = contentType.includes("application/json");
+          const body = isJson ? await response.json().catch(() => undefined) : undefined;
+
+          if (
+            response.status === 400 &&
+            body &&
+            body.error &&
+            body.error.code === "validation_error"
+          ) {
+            setZone(
+              "geste-3",
+              `<p>statut <code>400</code>, <code>error.code === "validation_error"</code> — ` +
+                `le préflight a réussi ET la réponse d'erreur porte bien le CORS ; aucune ` +
+                `réservation créée. Idempotency-Key envoyée : ` +
+                `<code>${escapeHtml(idempotencyKey)}</code>.</p>` +
+                `<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`,
+              true,
+            );
+            return;
+          }
+
+          setZone(
+            "geste-3",
+            `<p class="fail">réponse inattendue — statut <code>${response.status}</code>.</p>` +
+              (body ? `<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>` : ""),
+            false,
+          );
+        } catch (error) {
+          setZone(
+            "geste-3",
+            `<p class="fail">requête bloquée par le navigateur avant d'atteindre l'API — le ` +
+              `préflight a échoué (<code>${escapeHtml(String(error))}</code>). La spécification ` +
+              `Fetch n'expose aucune raison exploitable ici ; seul DevTools ou un ` +
+              `<code>curl -X OPTIONS</code> manuel montre le détail du préflight, invisible à ` +
+              `JavaScript par construction.</p>`,
+            false,
+          );
+        }
+      }
+
+      // Un simple rechargement de page rejoue les trois gestes, dans cet ordre —
+      // aucun bouton « tout relancer », aucune librairie de retry.
+      runGeste1();
+      runGeste2();
+      runGeste3();
+    </script>
+  </body>
+</html>
