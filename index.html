@@ -96,19 +96,23 @@
       </p>
       <pre>
 &lt;script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"&gt;&lt;/script&gt;
-&lt;booking-widget&gt;&lt;/booking-widget&gt;</pre>
+&lt;booking-widget salon="salao-demo"&gt;&lt;/booking-widget&gt;</pre>
       <p>
-        Ce qu'il faut observer ci-dessous : un encadré visible, rendu par un shadow root Lit, chargé
-        depuis <code>booking-api-psi-lilac.vercel.app</code> — un domaine distinct de celui qui sert
-        cette page (<code>*.github.io</code>), donc en cross-origin réel. L'URL est volontairement
-        laissée en dur (pas dérivée d'<code>apiOrigin</code>/<code>?api=</code>) : ce bloc doit
-        rester l'exemple copiable exact, jamais une variante paramétrée qu'un intégrateur ne
-        pourrait pas coller telle quelle.
+        Ce qu'il faut observer ci-dessous : les prestations actives du salon
+        <code>salao-demo</code> s'affichent en pt-BR, rendues dans un shadow root Lit chargé depuis
+        <code>booking-api-psi-lilac.vercel.app</code> — un domaine distinct de celui qui sert cette
+        page (<code>*.github.io</code>), donc en cross-origin réel. Le tunnel permet de choisir une
+        prestation, puis un employé (ou « peu importe »), puis un créneau dans le fuseau du salon ;
+        le récapitulatif affiche le choix complet SANS jamais poster de réservation (écran terminal
+        de la Phase 10). Toutes les requêtes émises par le widget visent l'origine de l'API, jamais
+        une autre. L'URL du script est volontairement laissée en dur (pas dérivée
+        d'<code>apiOrigin</code>/<code>?api=</code>) : ce bloc doit rester l'exemple copiable exact,
+        jamais une variante paramétrée qu'un intégrateur ne pourrait pas coller telle quelle.
       </p>
       <div id="geste-4">
         <!-- prettier-ignore -->
         <script defer src="https://booking-api-psi-lilac.vercel.app/widget/v1/booking-widget.js"></script>
-        <booking-widget></booking-widget>
+        <booking-widget salon="salao-demo"></booking-widget>
       </div>
     </section>
 
